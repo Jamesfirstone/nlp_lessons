@@ -43,7 +43,7 @@ class MemorySearch:
                     print("Searching with graph")
                     memories = self.mem0_client.search(
                         query,
-                        user_id=user_id,
+                        filters={"user_id": user_id},
                         top_k=self.top_k,
                         filter_memories=self.filter_memories,
                         enable_graph=True,
@@ -51,7 +51,7 @@ class MemorySearch:
                     )
                 else:
                     memories = self.mem0_client.search(
-                        query, user_id=user_id, top_k=self.top_k, filter_memories=self.filter_memories
+                        query, filters={"user_id": user_id}, top_k=self.top_k, filter_memories=self.filter_memories
                     )
                 break
             except Exception as e:
@@ -69,7 +69,7 @@ class MemorySearch:
                     "timestamp": memory["metadata"]["timestamp"],
                     "score": round(memory["score"], 2),
                 }
-                for memory in memories
+                for memory in memories["results"]
             ]
             graph_memories = None
         else:
@@ -168,7 +168,7 @@ class MemorySearch:
 
         return result
 
-    def process_data_file(self, file_path):
+    def process_data_file(self, file_path, max_workers=10):
         with open(file_path, "r") as f:
             data = json.load(f)
 
@@ -181,15 +181,14 @@ class MemorySearch:
             speaker_a_user_id = f"{speaker_a}_{idx}"
             speaker_b_user_id = f"{speaker_b}_{idx}"
 
-            for question_item in tqdm(
-                qa, total=len(qa), desc=f"Processing questions for conversation {idx}", leave=False
-            ):
-                result = self.process_question(question_item, speaker_a_user_id, speaker_b_user_id)
-                self.results[idx].append(result)
+            results = self.process_questions_parallel(
+                qa, speaker_a_user_id, speaker_b_user_id, max_workers=max_workers
+            )
+            self.results[idx].extend(results)
 
-                # Save results after each question is processed
-                with open(self.output_path, "w") as f:
-                    json.dump(self.results, f, indent=4)
+            # Save results after each conversation is processed
+            with open(self.output_path, "w") as f:
+                json.dump(self.results, f, indent=4)
 
         # Final save at the end
         with open(self.output_path, "w") as f:
